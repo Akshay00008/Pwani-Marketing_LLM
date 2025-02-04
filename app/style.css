@@ -1,0 +1,13 @@
+/* Custom styles for the Pwani Oil Marketing Content Generator */
+.stButton > button {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.stTextInput > div > div > input {
+  border-radius: 5px;
+}
+
+.stSelectbox > div > div > select {
+  border-radius: 5px;
+}
