@@ -79,3 +79,65 @@ def validate_date_range(date_range: str) -> bool:
     except Exception as e:
         print(e)
         return False
+
+def generate_product_image(brand: str, description: str, style: str, api_key: str) -> Optional[str]:
+    """Generates a product image using OpenAI's DALL-E model.
+    
+    Args:
+        brand: The brand name for the product
+        description: Description or context for image generation
+        style: The desired style of the image (e.g., 'modern', 'classic')
+        api_key: OpenAI API key
+        
+    Returns:
+        URL of the generated image or None if generation fails
+    """
+    try:
+        import openai
+        openai.api_key = api_key
+        
+        # Create a concise prompt for the image
+        prompt = f"Professional product photography of {brand} brand. {description}. Style: {style}, clean background, high-quality commercial product shot."
+        
+        # Generate image using DALL-E
+        response = openai.Image.create(
+            prompt=prompt,
+            n=1,
+            size="1024x1024",
+            quality="standard"
+        )
+        
+        return response.data[0].url
+    except Exception as e:
+        st.error(f"Failed to generate image: {str(e)}")
+        return None
+
+def save_generated_image(image_url: str, brand_name: str) -> Optional[str]:
+    """Downloads and saves a generated image locally.
+    
+    Args:
+        image_url: URL of the generated image
+        brand_name: Brand name for the file naming
+        
+    Returns:
+        Path to the saved image file or None if saving fails
+    """
+    try:
+        import requests
+        from pathlib import Path
+        
+        # Create a timestamped filename
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{brand_name.replace(' ', '_')}_{timestamp}.png"
+        
+        # Download and save the image
+        response = requests.get(image_url)
+        response.raise_for_status()
+        
+        with open(filename, 'wb') as f:
+            f.write(response.content)
+            
+        return filename
+    except Exception as e:
+        st.error(f"Failed to save image: {str(e)}")
+        return None

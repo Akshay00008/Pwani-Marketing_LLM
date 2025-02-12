@@ -1,0 +1,18 @@
+# Hugging Face Space Configuration
+config_version: 1
+title: Content Generation App
+sdk: streamlit
+python_version: "3.12"
+
+# Specify the command to run the app
+app_command: streamlit run app.py
+
+# Define the environment variables needed
+env:
+  - OPENAI_API_KEY
+  - GOOGLE_API_KEY
+
+# System dependencies
+apt:
+  - build-essential
+  - python3-dev
