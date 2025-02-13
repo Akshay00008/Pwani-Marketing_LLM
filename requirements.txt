@@ -10,6 +10,7 @@ cachetools
 certifi
 charset-normalizer
 click
+duckduckgo-search>=4.1.1
 filetype
 frozenlist
 gitdb
@@ -47,6 +48,7 @@ MarkupSafe
 mdurl
 msgpack
 multidict
+rank-bm25
 narwhals
 numpy
 orjson
@@ -94,3 +96,4 @@ validators
 yarl
 zipp
 langchain-community
+langchain-core
