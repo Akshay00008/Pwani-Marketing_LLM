@@ -100,4 +100,4 @@ langchain-community
 langchain-core
 langchain_openai
 faiss-cpu
-
+chat_history
