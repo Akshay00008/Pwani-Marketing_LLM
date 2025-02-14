@@ -9,6 +9,7 @@ blinker
 cachetools
 certifi
 charset-normalizer
+chat_history
 click
 duckduckgo-search>=4.1.1
 filetype
