@@ -1,3 +1,4 @@
+pip>=23.0
 aiohappyeyeballs
 aiohttp
 aiosignal
@@ -100,4 +101,4 @@ langchain-community
 langchain-core
 langchain_openai
 faiss-cpu
-pip>=23.0
+
