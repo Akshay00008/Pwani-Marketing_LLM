@@ -14,9 +14,9 @@ from rag import RAGSystem
 from langchain_community.document_loaders import TextLoader
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
+from chat_history import clear_chat_history, delete_message
 
 
-# In the initialize_rag_system function
 def initialize_rag_system(openai_api_key):
     """Initialize RAG system, loading documents only once."""
     if 'rag_system' not in st.session_state:
@@ -25,13 +25,13 @@ def initialize_rag_system(openai_api_key):
             st.session_state.rag_system = RAGSystem(llm)
 
             if not hasattr(st.session_state.rag_system, 'vector_store') or st.session_state.rag_system.vector_store is None:
-                # st.info("🔄 Loading knowledge base...")
-                loader = TextLoader("cleaned_cleaned_output.txt")
+                st.info("🔄 Loading knowledge base...")
+                loader = TextLoader("/Users/vishalroy/Downloads/ContentGenApp/cleaned_cleaned_output.txt")  # Replace with your actual path
                 documents = loader.load()
-                # if st.session_state.rag_system.ingest_documents(documents):
-                #     st.success("✨ RAG system initialized successfully")
-                # else:
-                #     st.warning("RAG system initialization skipped - will proceed without context")
+                if st.session_state.rag_system.ingest_documents(documents):
+                    st.success("✨ RAG system initialized successfully")
+                else:
+                    st.warning("RAG system initialization skipped - will proceed without context")
             else:
                 st.info("✨ Using existing RAG knowledge base")
 
@@ -44,7 +44,7 @@ def apply_template_defaults(template_type):
     if template_type != "Custom Campaign":
         template_data = load_campaign_template(template_type)
         for key, value in template_data.items():
-            if key in st.session_state:
+            if key in st.session_state and st.session_state[key] is not None: #check if it exist in session state
                 st.session_state[key] = value
 
 def generate_content_workflow(input_vars, model_name, temperature, top_p, output_format, use_rag, rag_query, use_search_engine, search_engine_query, selected_brand, openai_api_key, google_api_key):
@@ -91,45 +91,36 @@ def generate_content_workflow(input_vars, model_name, temperature, top_p, output
         return {"error": str(e)}
 
 
+
 def display_generated_content(generated_content, selected_brand, generate_image, image_style, openai_api_key, campaign_name):
-    """Displays the generated content and handles image generation/saving."""
-    st.success("✨ Content generated successfully!")
-    st.subheader("Generated Content")
-    st.markdown("---")
+    """Displays generated content with campaign name context."""
 
     if isinstance(generated_content, str):
-        st.markdown(generated_content)
+        st.text(generated_content)
     elif isinstance(generated_content, MarketingContent):
-        st.subheader(generated_content.headline)
-        st.write(generated_content.body)
-        st.markdown(f"**Call to Action:** {generated_content.call_to_action}")
-        st.markdown("**Key Benefits:**")
-        for benefit in generated_content.key_benefits:
-            st.markdown(f"- {benefit}")
+        content = f"Campaign: {campaign_name}\n\n{generated_content.headline}\n\n{generated_content.body}\n\nCall to Action: {generated_content.call_to_action}\n\nKey Benefits:\n"
+        content += '\n'.join([f"- {benefit}" for benefit in generated_content.key_benefits])
+        st.text(content)
     elif isinstance(generated_content, SocialMediaContent):
-        st.markdown(f"**Platform:** {generated_content.platform}")
-        st.markdown(f"**Post Text:** {generated_content.post_text}")
-        st.markdown(f"**Hashtags:** {', '.join(generated_content.hashtags)}")
-        st.markdown(f"**Call to Action:** {generated_content.call_to_action}")
+        content = f"Campaign: {campaign_name}\nPlatform: {generated_content.platform}\nPost Text: {generated_content.post_text}\nHashtags: {', '.join(generated_content.hashtags)}\nCall to Action: {generated_content.call_to_action}"
+        st.text(content)
     elif isinstance(generated_content, EmailContent):
-        st.markdown(f"**Subject Line:** {generated_content.subject_line}")
-        st.markdown(f"**Preview Text:** {generated_content.preview_text}")
-        st.markdown(f"**Body:** {generated_content.body}")
-        st.markdown(f"**Call to Action:** {generated_content.call_to_action}")
+        content = f"Campaign: {campaign_name}\nSubject Line: {generated_content.subject_line}\nPreview Text: {generated_content.preview_text}\nBody: {generated_content.body}\nCall to Action: {generated_content.call_to_action}"
+        st.text(content)
     elif isinstance(generated_content, dict):
-        st.markdown(json.dumps(generated_content, indent=2))
+        generated_content['campaign_name'] = campaign_name
+        st.text(json.dumps(generated_content, indent=2))
     else:
-        st.markdown(generated_content)
+        st.text(str(generated_content))
 
     # Generate image if requested
     if generate_image:
-        st.subheader("Generated Image")
         with st.spinner("🎨 Generating product image..."):
             description = ""
             if isinstance(generated_content, MarketingContent):
-                description = f"{generated_content.headline}. {generated_content.body}"
+                description = f"Campaign: {campaign_name}. {generated_content.headline}. {generated_content.body}"
             elif isinstance(generated_content, str):
-                description = generated_content[:500]
+                description = f"Campaign: {campaign_name}. {generated_content[:500]}"
 
             image_url = generate_product_image(
                 selected_brand,
@@ -139,15 +130,15 @@ def display_generated_content(generated_content, selected_brand, generate_image,
             )
 
             if image_url:
-                st.image(image_url, caption=f"{selected_brand} Product Image")
+                st.image(image_url, caption=f"{selected_brand} - {campaign_name} Product Image")
                 if st.button("💾 Save Image"):
-                    saved_image_path = save_generated_image(image_url, selected_brand)
+                    saved_image_path = save_generated_image(image_url, f"{selected_brand}_{campaign_name}")
                     if saved_image_path:
                         st.success(f"Image saved to: {saved_image_path}")
             else:
                 st.error("Failed to generate image. Please try again.")
 
-    return True  # Indicate content display success
+    return True
 
 def initialize_chatbot(model_name, temperature, openai_api_key, google_api_key):
     """Initializes the chatbot conversation chain."""
@@ -158,29 +149,96 @@ def initialize_chatbot(model_name, temperature, openai_api_key, google_api_key):
             memory=ConversationBufferMemory()
         )
 
-def handle_chat_input(user_input, model_name, temperature, openai_api_key, google_api_key):
-    """Handles user input in the chatbot, generating and displaying responses."""
+
+def handle_chat_input(user_input, model_name, temperature, openai_api_key, google_api_key, input_vars):
+    """Handles user input, generating responses or creating content based on context."""
+
     if 'conversation' not in st.session_state:
         initialize_chatbot(model_name, temperature, openai_api_key, google_api_key)
 
     # Display user message
     with st.chat_message("user"):
         st.markdown(user_input)
-
-    # Get response from conversation chain
-    with st.chat_message("assistant"):
-        message_placeholder = st.empty()  # Placeholder for the full response
-        full_response = ""
-        with st.spinner("Thinking..."):
-             # Directly use the predict method, as it interacts with memory correctly
-            response = st.session_state.conversation.predict(input=user_input)
-            full_response += response
-            message_placeholder.markdown(full_response + "▌")
-        message_placeholder.markdown(full_response)  # Final update without cursor
-
-    # Add to chat history
     st.session_state.messages.append({"role": "user", "content": user_input})
-    st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+
+        # Check if the user is asking for content generation
+        if "generate" in user_input.lower() or "create" in user_input.lower():
+            with st.spinner("🎨 Generating your marketing content..."):
+                generation_result = generate_content_workflow(
+                    input_vars, model_name, temperature, st.session_state.get('top_p', 0.9),
+                    st.session_state.get('output_format', 'Text'),
+                    st.session_state.get('use_rag', False),
+                    user_input if st.session_state.get('use_rag', False) else None,
+                    st.session_state.get('use_search_engine', False),
+                    st.session_state.get('search_engine_query', None),
+                    st.session_state.get('selected_brand'), openai_api_key, google_api_key
+                )
+
+                if "error" in generation_result:
+                    full_response = f"Failed to generate content: {generation_result['error']}"
+                    message_placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})  # Add error to chat
+                else:
+                    st.session_state.generated_content_result = generation_result["content"]
+                    # Directly display *only* the generated content.
+                    display_generated_content(
+                        st.session_state.generated_content_result,
+                        st.session_state.get('selected_brand', 'Default Brand'),
+                        st.session_state.get('generate_image', False),
+                        st.session_state.get('image_style', 'Realistic'),
+                        openai_api_key,
+                        st.session_state.get('campaign_name', 'Unnamed Campaign')
+                    )
+                    # Don't add anything else to the chatbot.  The content display is handled above.
+                    st.session_state.messages.append({"role": "assistant", "content": "Content generated."})
+
+        else:  # General Q&A and Content Refinement
+            with st.spinner("Thinking..."):
+                # Build rich context including campaign details, input variables, and current content
+                context = f"User Input: {user_input}\n\n"
+                
+                # Add campaign and input variables context
+                campaign_context = f"Campaign Name: {input_vars.get('campaign_name')}\n"
+                campaign_context += f"Brand: {input_vars.get('brand')}\n"
+                campaign_context += f"Product Category: {input_vars.get('product_category')}\n"
+                campaign_context += f"SKU: {input_vars.get('sku')}\n"
+                campaign_context += f"Tone & Style: {input_vars.get('tone_style')}\n"
+                context += f"Campaign Context: {campaign_context}\n"
+
+                # Add current content for refinement
+                if 'generated_content_result' in st.session_state:
+                    context += f"Current Content: {str(st.session_state.generated_content_result)}\n"
+
+                # Add specific instructions for content refinement
+                context += "\nInstructions: If the user is asking to refine or modify the content, please provide specific suggestions "
+                context += "and explain the reasoning behind them. Focus on maintaining brand voice and campaign objectives."
+
+                response = st.session_state.conversation.predict(input=context)
+                
+                # Check if response contains actionable refinements
+                if "REFINED_CONTENT:" in response:
+                    refined_content = response.split("REFINED_CONTENT:")[1].strip()
+                    st.session_state.generated_content_result = refined_content
+                    #st.success("✨ Content updated based on your feedback!")  # Removed success message
+                    display_generated_content(
+                        refined_content,
+                        st.session_state.get('selected_brand', 'Default Brand'),
+                        st.session_state.get('generate_image', False),
+                        st.session_state.get('image_style', 'Realistic'),
+                        openai_api_key,
+                        st.session_state.get('campaign_name', 'Unnamed Campaign')
+                    )
+                else: #if no refined content still continue the normal flow
+                     full_response = response
+                     message_placeholder.markdown(full_response)
+                     st.session_state.messages.append({"role": "assistant", "content": full_response})
+           
+
+
 
 def main():
     configure_streamlit_page()
@@ -365,6 +423,13 @@ def main():
             use_search_engine = st.checkbox("Use Web Search", value=False, help="Incorporate live web search results into the content", key="use_search_engine_checkbox")
             search_engine_query = st.text_input("Search Query", help="Enter the search query for the web search engine", key="search_query_input") if use_search_engine else None
 
+            # Content requirements
+            st.subheader("Content Requirements")
+            specific_instructions = st.text_area(
+                "Specific Instructions",
+                help="Enter any specific requirements or guidelines for the content",
+                key="specific_instructions_input"
+            )
 
         with col2:
             temperature = st.slider(
@@ -385,23 +450,17 @@ def main():
             )
 
 
-    # Content requirements
-    st.subheader("Content Requirements")
-    specific_instructions = st.text_area(
-        "Specific Instructions",
-        help="Enter any specific requirements or guidelines for the content",
-        key="specific_instructions_input"
-    )
-
     # State to manage content generation and satisfaction
     if "generated_content_result" not in st.session_state:
         st.session_state.generated_content_result = None
     if "content_satisfied" not in st.session_state:
         st.session_state.content_satisfied = False
 
-    # Generate button with loading state
-    if st.button("🚀 Generate Content", type="primary") or (st.session_state.generated_content_result and not st.session_state.content_satisfied): # Regenerate if not satisfied
-        st.session_state.content_satisfied = False # Reset satisfaction on new generation
+   # Generate button moved to chatbot tab
+    with tab4:
+        st.subheader("🤖 Chat with your Marketing Assistant")
+
+        # Gather input variables here, similar to how it was done in the original "Generate Content" section.
         input_vars = {
             "campaign_name": campaign_name,
             "promotion_link": promotion_link,
@@ -422,35 +481,50 @@ def main():
             "output_format": output_format
         }
 
-        # Validate inputs
+        # Validate inputs (before chat loop starts, crucial for first-time generation)
         is_valid, error_message = validate_inputs(input_vars)
         if not is_valid:
             st.error(error_message)
-            st.stop()
+            st.stop()  # Stop execution if validation fails
 
         # Validate date range
         if not validate_date_range(campaign_date_range):
             st.error("Invalid date range. End date must be after start date.")
             st.stop()
 
-        # Generate content with progress bar
-        with st.spinner("🎨 Generating your marketing content..."):
-            progress_bar = st.progress(0)
-            for i in range(100):
-                time.sleep(0.01)
-                progress_bar.progress(i + 1)
 
-            generation_result = generate_content_workflow(
-                input_vars, model_name, temperature, top_p, output_format, use_rag, specific_instructions, use_search_engine, search_engine_query, selected_brand, openai_api_key, google_api_key
-            )
+        # Create a container for chat messages with fixed height and scrolling
+        chat_container = st.container()
+        # Apply custom styling for chat container
+        st.markdown("""
+            <style>
+            [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
+                height: 600px;
+                overflow-y: auto;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+        
+        with chat_container:
+            # Add Clear All button
+            if st.button("🗑️ Clear All Messages", key="clear_all"):
+                clear_chat_history()
 
-            if "error" in generation_result:
-                st.error(f"Failed to generate content: {generation_result['error']}")
-                st.stop()
+            # Display chat messages from history with delete buttons
+            for idx, message in enumerate(st.session_state.messages):
+                col1, col2 = st.columns([0.9, 0.1])
+                with col1:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
+                with col2:
+                    if st.button("🗑️", key=f"delete_{idx}"):
+                        delete_message(idx)
+                        st.rerun()  # Important: Rerun to update the chat display
 
-            st.session_state.generated_content_result = generation_result["content"]
-
-        display_generated_content(st.session_state.generated_content_result, selected_brand, generate_image, image_style, openai_api_key, campaign_name)
+        # Input field fixed at bottom
+        st.markdown("<div style='padding: 1rem 0;'></div>", unsafe_allow_html=True)
+        if user_input := st.chat_input("Ask a question about your campaign, or type 'generate' to create content..."):
+            handle_chat_input(user_input, model_name, temperature, openai_api_key, google_api_key, input_vars)
 
 
     if st.session_state.generated_content_result:
@@ -458,12 +532,35 @@ def main():
         with col1:
             if st.button("👍 Satisfied"):
                 st.session_state.content_satisfied = True
-                st.success("Content marked as satisfactory!")
+                st.success("Content marked as satisfactory!")  # Keep this
 
         with col2:
             if not st.session_state.content_satisfied and st.button("🔄 Regenerate", type="secondary"):
-                st.info("Click '🚀 Generate Content' button above to regenerate with current settings or adjust parameters.")
-
+                 st.session_state.messages.append({"role": "assistant", "content": "Regenerating content..."})  # Add to chat
+                 # Directly regenerate.  No need for another button.
+                 generation_result = generate_content_workflow(
+                    input_vars, model_name, temperature, st.session_state.get('top_p', 0.9),
+                    st.session_state.get('output_format', 'Text'),
+                    st.session_state.get('use_rag', False),
+                    None,  # No specific RAG query on regenerate
+                    st.session_state.get('use_search_engine', False),
+                    st.session_state.get('search_engine_query', None),
+                    st.session_state.get('selected_brand'), openai_api_key, google_api_key
+                )
+                 if "error" in generation_result:
+                     st.error(f"Regeneration failed: {generation_result['error']}")
+                     st.session_state.messages.append({"role": "assistant", "content": f"Regeneration failed: {generation_result['error']}"})
+                 else:
+                     st.session_state.generated_content_result = generation_result["content"]
+                     display_generated_content(
+                         st.session_state.generated_content_result,
+                         st.session_state.get('selected_brand', 'Default Brand'),
+                         st.session_state.get('generate_image', False),
+                         st.session_state.get('image_style', 'Realistic'),
+                         openai_api_key,
+                         st.session_state.get('campaign_name', 'Unnamed Campaign')
+                     )
+                    #  st.success("Content regenerated.") #removed success message
 
         if st.session_state.content_satisfied:
             # Save content options only when satisfied
@@ -482,17 +579,6 @@ def main():
                             f"{campaign_name} ({datetime.now().strftime('%Y-%m-%d')})"
                         )
 
-    with tab4:
-        st.subheader("🤖 Chat with your Marketing Assistant")
-
-        # Display chat messages from history
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        # Accept user input
-        if user_input := st.chat_input("Ask a question about your campaign or content..."):
-            handle_chat_input(user_input, model_name, temperature, openai_api_key, google_api_key)
 
 
 if __name__ == "__main__":
