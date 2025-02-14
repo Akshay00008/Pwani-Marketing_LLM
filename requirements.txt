@@ -1,3 +1,4 @@
+pip==25.0.1
 aiohappyeyeballs
 aiohttp
 aiosignal
@@ -9,7 +10,6 @@ blinker
 cachetools
 certifi
 charset-normalizer
-chat_history
 click
 duckduckgo-search>=4.1.1
 filetype
@@ -100,3 +100,4 @@ langchain-community
 langchain-core
 langchain_openai
 faiss-cpu
+chat_history
