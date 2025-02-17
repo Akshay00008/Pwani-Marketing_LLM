@@ -1,4 +1,3 @@
-pip==25.0.1
 aiohappyeyeballs
 aiohttp
 aiosignal
@@ -100,4 +99,4 @@ langchain-community
 langchain-core
 langchain_openai
 faiss-cpu
-chat_history
+
