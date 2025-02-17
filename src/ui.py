@@ -453,7 +453,7 @@ def main():
             with col1:
                 model_name = st.selectbox(
                     "Model",
-                    ["gpt-4", "gemini-pro", "gemini-1.5-pro", "gemini-2.0-flash-exp","gemini-2.0-flash-thinking-exp-01-21"],
+                    ["gemini-pro", "gemini-1.5-pro", "gemini-2.0-flash-exp","gemini-2.0-flash-thinking-exp-01-21"],
                     help="Select the AI model to use",
                     key="model_name_select"
                 )
