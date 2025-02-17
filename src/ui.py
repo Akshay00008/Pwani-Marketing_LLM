@@ -16,7 +16,6 @@ from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
 from chat_history import clear_chat_history, delete_message
 
-
 def initialize_rag_system(openai_api_key):
     """Initialize RAG system, loading documents only once."""
     if 'rag_system' not in st.session_state:
@@ -24,6 +23,7 @@ def initialize_rag_system(openai_api_key):
             llm = get_llm(openai_api_key, "gpt-4", temperature=0)
             st.session_state.rag_system = RAGSystem(llm)
 
+            # Check if the vector store exists.  If not, load documents.
             if not hasattr(st.session_state.rag_system, 'vector_store') or st.session_state.rag_system.vector_store is None:
                 st.info("🔄 Loading knowledge base...")
                 loader = TextLoader("/Users/vishalroy/Downloads/ContentGenApp/cleaned_cleaned_output.txt")  # Replace with your actual path
@@ -31,11 +31,13 @@ def initialize_rag_system(openai_api_key):
                 if st.session_state.rag_system.ingest_documents(documents):
                     st.success("✨ RAG system initialized successfully")
                 else:
+                    # This shouldn't normally happen, but keep it for safety.
                     st.warning("RAG system initialization skipped - will proceed without context")
             else:
                 st.info("✨ Using existing RAG knowledge base")
 
         except Exception as e:
+            # It's better to proceed without RAG than to completely fail.
             st.warning(f"RAG system initialization skipped: {str(e)} - will proceed without context")
 
 
@@ -43,16 +45,22 @@ def apply_template_defaults(template_type):
     """Apply default values from a template if selected."""
     if template_type != "Custom Campaign":
         template_data = load_campaign_template(template_type)
+        # Iterate through the template data and apply defaults.
         for key, value in template_data.items():
-            if key in st.session_state and st.session_state[key] is not None: #check if it exist in session state
+            if key in st.session_state and st.session_state.get(key) is not None:
                 st.session_state[key] = value
+
+
 
 def generate_content_workflow(input_vars, model_name, temperature, top_p, output_format, use_rag, rag_query, use_search_engine, search_engine_query, selected_brand, openai_api_key, google_api_key):
     """Handles the content generation workflow."""
+
+    # Get the correct LLM based on model name (handles OpenAI and Google models).
     llm = get_llm(google_api_key if not model_name.startswith("gpt") else openai_api_key, model_name, temperature, top_p)
     if not llm:
         return {"error": "Failed to initialize LLM."}
 
+    # Create the prompt template.
     prompt = create_prompt_template(
         instruction="Generate marketing campaign content",
         output_format=output_format,
@@ -61,6 +69,7 @@ def generate_content_workflow(input_vars, model_name, temperature, top_p, output
     )
 
     try:
+        # Use RAG if enabled and a query is provided.
         if use_rag and rag_query:
             context_query = f"""
             Brand: {selected_brand}
@@ -72,15 +81,17 @@ def generate_content_workflow(input_vars, model_name, temperature, top_p, output
             if rag_context:
                 input_vars["rag_context"] = rag_context
 
+        # Create the Langraph workflow.
         workflow = create_langraph_workflow(
             llm,
             prompt,
             input_vars,
             output_format,
             use_search_engine,
-            search_engine_query if search_engine_query else None
+            search_engine_query if search_engine_query else None  # Only pass if not None
         )
 
+        # Invoke the workflow and get the result.
         result = workflow.invoke(input_vars)
         if "error" in result:
             return {"error": result["error"]}
@@ -108,10 +119,10 @@ def display_generated_content(generated_content, selected_brand, generate_image,
         content = f"Campaign: {campaign_name}\nSubject Line: {generated_content.subject_line}\nPreview Text: {generated_content.preview_text}\nBody: {generated_content.body}\nCall to Action: {generated_content.call_to_action}"
         st.text(content)
     elif isinstance(generated_content, dict):
-        generated_content['campaign_name'] = campaign_name
-        st.text(json.dumps(generated_content, indent=2))
+        generated_content['campaign_name'] = campaign_name  # Ensure campaign_name is included
+        st.text(json.dumps(generated_content, indent=2))  # Use json.dumps for pretty printing
     else:
-        st.text(str(generated_content))
+        st.text(str(generated_content))  # Fallback for unexpected types
 
     # Generate image if requested
     if generate_image:
@@ -120,7 +131,9 @@ def display_generated_content(generated_content, selected_brand, generate_image,
             if isinstance(generated_content, MarketingContent):
                 description = f"Campaign: {campaign_name}. {generated_content.headline}. {generated_content.body}"
             elif isinstance(generated_content, str):
+                # Limit length to avoid overly long descriptions.
                 description = f"Campaign: {campaign_name}. {generated_content[:500]}"
+            # ... (rest of your image generation code) ...
 
             image_url = generate_product_image(
                 selected_brand,
@@ -138,7 +151,7 @@ def display_generated_content(generated_content, selected_brand, generate_image,
             else:
                 st.error("Failed to generate image. Please try again.")
 
-    return True
+    return True  # Explicit return is good practice.
 
 def initialize_chatbot(model_name, temperature, openai_api_key, google_api_key):
     """Initializes the chatbot conversation chain."""
@@ -200,7 +213,7 @@ def handle_chat_input(user_input, model_name, temperature, openai_api_key, googl
             with st.spinner("Thinking..."):
                 # Build rich context including campaign details, input variables, and current content
                 context = f"User Input: {user_input}\n\n"
-                
+
                 # Add campaign and input variables context
                 campaign_context = f"Campaign Name: {input_vars.get('campaign_name')}\n"
                 campaign_context += f"Brand: {input_vars.get('brand')}\n"
@@ -218,7 +231,7 @@ def handle_chat_input(user_input, model_name, temperature, openai_api_key, googl
                 context += "and explain the reasoning behind them. Focus on maintaining brand voice and campaign objectives."
 
                 response = st.session_state.conversation.predict(input=context)
-                
+
                 # Check if response contains actionable refinements
                 if "REFINED_CONTENT:" in response:
                     refined_content = response.split("REFINED_CONTENT:")[1].strip()
@@ -236,7 +249,8 @@ def handle_chat_input(user_input, model_name, temperature, openai_api_key, googl
                      full_response = response
                      message_placeholder.markdown(full_response)
                      st.session_state.messages.append({"role": "assistant", "content": full_response})
-           
+
+
 
 
 
@@ -250,6 +264,36 @@ def main():
     # Initialize RAG system
     initialize_rag_system(openai_api_key)
 
+    # Initialize default values for target market fields
+    if 'target_market_defaults' not in st.session_state:
+        st.session_state.target_market_defaults = {
+            'age_range': (25, 45),
+            'gender': ["Male", "Female"],
+            'income_level': "Middle", 
+            'region': ["Nairobi", "Mombasa", "Kisumu"],
+            'urban_rural': ["Urban", "Suburban"]
+        }
+
+    # Improve chat interface styling
+    st.markdown("""
+        <style>
+        .stChatFloatingInputContainer {
+            position: fixed;
+            bottom: 20px;
+            width: calc(100% - 80px);
+            z-index: 999;
+        }
+        .chat-container {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 60px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Initialize tab states
+    if 'current_tab' not in st.session_state:
+        st.session_state.current_tab = 0  # Start with the first tab (index 0)
 
     # Sidebar setup
     with st.sidebar:
@@ -258,7 +302,7 @@ def main():
             "Select Campaign Type",
             ["Custom Campaign", "Product Launch", "Seasonal Sale", "Brand Awareness"],
             on_change=apply_template_defaults,  # Apply template on change
-            args=[st.session_state.get("template_type", "Custom Campaign")] # Pass current value to set default in function
+            args=[st.session_state.get("template_type", "Custom Campaign")]  # Pass current value to set default
         )
         st.session_state["template_type"] = template_type
 
@@ -266,8 +310,9 @@ def main():
         st.subheader("Recent Campaigns")
         if "campaign_history" not in st.session_state:
             st.session_state.campaign_history = []
-        for campaign in st.session_state.campaign_history[-5:]:
+        for campaign in st.session_state.campaign_history[-5:]:  # Show last 5
             st.text(f"📄 {campaign}")
+
 
     # Main content
     st.title("🌟 Pwani Oil Marketing Content Generator")
@@ -276,39 +321,46 @@ def main():
      # Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    # Tabs for different content types
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["Campaign Details", "Target Market", "Advanced Settings", "Chatbot"]
-    )
 
-    with tab1:
-        col1, col2 = st.columns(2)
-        with col1:
-            campaign_name = st.text_input(
-                "Campaign Name",
-                key="campaign_name",
-                help="Enter a unique name for your campaign",
-            )
+    # --- Tab Navigation Logic ---
+    def next_tab():
+        st.session_state.current_tab = (st.session_state.current_tab + 1) % 3  # Cycle through tabs (0, 1, 2)
 
-            # Replace the existing brand selection with new dropdown and description
-            selected_brand = st.selectbox(
-                "Brand",
-                options=list(BRAND_OPTIONS.keys()),
-                help="Select the brand for the campaign"
-            )
+    def prev_tab():
+        st.session_state.current_tab = (st.session_state.current_tab - 1) % 3
 
-            if selected_brand:
-                st.info(f"📝 **Brand Description:** {BRAND_OPTIONS[selected_brand]}")
+    # --- Tab Content ---
+    # Use st.container to group elements within each tab.  This is crucial for tab switching.
+    if st.session_state.current_tab == 0:
+        with st.container():  # Tab 1: Campaign Details
+            st.header("Campaign Details")  # Add a header for each tab
+            col1, col2 = st.columns(2)
+            with col1:
+                campaign_name = st.text_input(
+                    "Campaign Name",
+                    key="campaign_name",
+                    help="Enter a unique name for your campaign",
+                )
 
-            promotion_link = st.text_input(
-                "Promotion Link",
-                key="promotion_link",
-                help="Enter the landing page URL",
-            )
-            previous_campaign_reference = st.text_input(
-                "Previous Campaign Reference", key="previous_campaign_reference"
-            )
-        # In tab1, under col2
+                # Replace the existing brand selection with new dropdown and description
+                selected_brand = st.selectbox(
+                    "Brand",
+                    options=list(BRAND_OPTIONS.keys()),
+                    help="Select the brand for the campaign"
+                )
+
+                if selected_brand:
+                    st.info(f"📝 **Brand Description:** {BRAND_OPTIONS[selected_brand]}")
+
+                promotion_link = st.text_input(
+                    "Promotion Link",
+                    key="promotion_link",
+                    help="Enter the landing page URL",
+                )
+                previous_campaign_reference = st.text_input(
+                    "Previous Campaign Reference", key="previous_campaign_reference"
+                )
+            # In tab1, under col2
             with col2:
                 sku = st.selectbox(
                     "SKU",
@@ -338,117 +390,129 @@ def main():
                         "Persuasive",
                         "Emotional"
                     ],
-                    key="tone_style_tab1",
+                    key="tone_style_tab1",  # Unique key
                     help="Select the tone and style for your content"
                 )
 
-    with tab2:
-        col1, col2 = st.columns(2)
-        with col1:
-            age_range = (
-                st.select_slider(
-                    "Age Range", options=list(range(18, 76, 1)), value=(25, 45),
-                     key="age_range_slider" #Unique Key
+            col1, _, col2 = st.columns([1, 2, 1])
+            with col2:
+                if st.button("Next →", key="tab1_next"):
+                    next_tab()
+
+
+
+    elif st.session_state.current_tab == 1:
+        with st.container():  # Tab 2: Target Market
+            st.header("Target Market")
+            col1, col2 = st.columns(2)
+            with col1:
+                age_range = st.select_slider(
+                    "Age Range",
+                    options=list(range(18, 76, 1)),
+                    value=st.session_state.target_market_defaults['age_range'],
+                    key="age_range_slider"
                 )
-                if st.checkbox("Add Age Range", key="use_age_range_tab2")
-                else None
-            )
-            gender = (
-                st.multiselect(
-                    "Gender", ["Male", "Female", "Other"], default=["Female"],
-                    key="gender_multiselect" #Unique Key
+                gender = st.multiselect(
+                    "Gender",
+                    ["Male", "Female", "Other"],
+                    default=st.session_state.target_market_defaults['gender'],
+                    key="gender_multiselect"
                 )
-                if st.checkbox("Add Gender", key="use_gender_tab2")
-                else None
-            )
-        with col2:
-            income_level = (
-                st.select_slider(
+            with col2:
+                income_level = st.select_slider(
                     "Income Level",
                     options=["Low", "Middle Low", "Middle", "Middle High", "High"],
-                    value="Middle",
-                    key="income_level_slider" #Unique Key
+                    value=st.session_state.target_market_defaults['income_level'],
+                    key="income_level_slider"
                 )
-                if st.checkbox("Add Income Level", key="use_income_level_tab2")
-                else None
-            )
-            region = (
-                st.multiselect(
+                region = st.multiselect(
                     "Region",
                     ["Nairobi", "Mombasa", "Kisumu", "Nakuru", "Other"],
-                    default=["Nairobi", "Mombasa"],
-                     key="region_multiselect" #Unique Key
+                    default=st.session_state.target_market_defaults['region'],
+                    key="region_multiselect"
                 )
-                if st.checkbox("Add Region", key="use_region_tab2")
-                else None
-            )
-            urban_rural = (
-                st.multiselect(
-                    "Area Type", ["Urban", "Suburban", "Rural"], default=["Urban"],
-                    key="urban_rural_multiselect" #Unique Key
+                urban_rural = st.multiselect(
+                    "Area Type",
+                    ["Urban", "Suburban", "Rural"],
+                    default=st.session_state.target_market_defaults['urban_rural'],
+                    key="urban_rural_multiselect"
                 )
-                if st.checkbox("Add Area Type", key="use_urban_rural_tab2")
-                else None
-            )
+            col1, _, col2 = st.columns([1, 2, 1])
+            with col1:
+                if st.button("← Previous", key="tab2_prev"):
+                    prev_tab()
+            with col2:
+                if st.button("Next →", key="tab2_next"):
+                    next_tab()
 
-    with tab3:
-        col1, col2 = st.columns(2)
-        with col1:
-            model_name = st.selectbox(
-                "Model",
-                ["gpt-4", "gemini-pro", "gemini-1.5-pro", "gemini-2.0-flash-exp","gemini-2.0-flash-thinking-exp-01-21"],
-                help="Select the AI model to use",
-                key="model_name_select"
-            )
-            output_format = st.selectbox(
-                "Output Format",
-                ["Social Media", "Email", "Marketing", "Text"],
-                help="Choose the type of content to generate",
-                key="output_format_select"
-            )
 
-            # Add RAG option
-            use_rag = st.checkbox("Use RAG System", value=True, help="Use Retrieval Augmented Generation for better context", key="use_rag_checkbox")
+    elif st.session_state.current_tab == 2:
+        with st.container():  # Tab 3: Advanced Settings
+            st.header("Advanced Settings")  # Add a header
+            col1, col2 = st.columns(2)
+            with col1:
+                model_name = st.selectbox(
+                    "Model",
+                    ["gpt-4", "gemini-pro", "gemini-1.5-pro", "gemini-2.0-flash-exp","gemini-2.0-flash-thinking-exp-01-21"],
+                    help="Select the AI model to use",
+                    key="model_name_select"
+                )
+                output_format = st.selectbox(
+                    "Output Format",
+                    ["Social Media", "Email", "Marketing", "Text"],
+                    help="Choose the type of content to generate",
+                    key="output_format_select"
+                )
 
-            # Add image generation options
-            generate_image = st.checkbox("Generate Product Image", value=False, key="generate_image_checkbox")
-            image_style = st.selectbox(
-                "Image Style",
-                ["Realistic", "Artistic", "Modern", "Classic"],
-                help="Select the style for the generated image",
-                key="image_style_select"
-            ) if generate_image else None # Conditional selectbox
+                # Add RAG option
+                use_rag = st.checkbox("Use RAG System", value=True, help="Use Retrieval Augmented Generation for better context", key="use_rag_checkbox")
 
-            # Add search engine option
-            use_search_engine = st.checkbox("Use Web Search", value=False, help="Incorporate live web search results into the content", key="use_search_engine_checkbox")
-            search_engine_query = st.text_input("Search Query", help="Enter the search query for the web search engine", key="search_query_input") if use_search_engine else None
+                # Add image generation options
+                generate_image = st.checkbox("Generate Product Image", value=False, key="generate_image_checkbox")
+                image_style = st.selectbox(
+                    "Image Style",
+                    ["Realistic", "Artistic", "Modern", "Classic"],
+                    help="Select the style for the generated image",
+                    key="image_style_select"
+                ) if generate_image else None # Conditional selectbox
 
-            # Content requirements
-            st.subheader("Content Requirements")
-            specific_instructions = st.text_area(
-                "Specific Instructions",
-                help="Enter any specific requirements or guidelines for the content",
-                key="specific_instructions_input"
-            )
+                # Add search engine option
+                use_search_engine = st.checkbox("Use Web Search", value=False, help="Incorporate live web search results into the content", key="use_search_engine_checkbox")
+                search_engine_query = st.text_input("Search Query", help="Enter the search query for the web search engine", key="search_query_input") if use_search_engine else None
 
-        with col2:
-            temperature = st.slider(
-                "Creativity Level",
-                0.0,
-                1.0,
-                0.7,
-                help="Higher values = more creative output",
-                key="temperature_slider"
-            )
-            top_p = st.slider(
-                "Diversity Level",
-                0.0,
-                1.0,
-                0.9,
-                help="Higher values = more diverse output",
-                key="top_p_slider"
-            )
+                # Content requirements
+                st.subheader("Content Requirements")
+                specific_instructions = st.text_area(
+                    "Specific Instructions",
+                    help="Enter any specific requirements or guidelines for the content",
+                    key="specific_instructions_input"
+                )
 
+            with col2:
+                temperature = st.slider(
+                    "Creativity Level",
+                    0.0,
+                    1.0,
+                    0.7,
+                    help="Higher values = more creative output",
+                    key="temperature_slider"
+                )
+                top_p = st.slider(
+                    "Diversity Level",
+                    0.0,
+                    1.0,
+                    0.9,
+                    help="Higher values = more diverse output",
+                    key="top_p_slider"
+                )
+
+            col1, _, col2 = st.columns([1, 2, 1])
+            with col1:
+                if st.button("← Previous", key="tab3_prev"):
+                    prev_tab()
+
+
+    # --- Common elements (outside tab containers) ---
 
     # State to manage content generation and satisfaction
     if "generated_content_result" not in st.session_state:
@@ -456,61 +520,81 @@ def main():
     if "content_satisfied" not in st.session_state:
         st.session_state.content_satisfied = False
 
-   # Generate button moved to chatbot tab
-    with tab4:
-        st.subheader("🤖 Chat with your Marketing Assistant")
+    # Gather input variables.  This needs to happen *after* all the input widgets.
+    input_vars = {
+        "campaign_name": st.session_state.get("campaign_name", ""),  # Use .get for safety
+        "promotion_link": st.session_state.get("promotion_link", ""),
+        "previous_campaign_reference": st.session_state.get("previous_campaign_reference", ""),
+        "sku": st.session_state.get("sku", ""),
+        "product_category": st.session_state.get("product_category", ""),
+        "campaign_date_range": st.session_state.get("campaign_date_range", ""),
+        "age_range": f"{st.session_state.get('age_range_slider', [25,45])[0]}-{st.session_state.get('age_range_slider',[25,45])[1]}" if st.session_state.get("use_age_range_tab2") else None,
+        "gender": ", ".join(st.session_state.get("gender_multiselect", [])) if st.session_state.get("use_gender_tab2") else None,
+        "income_level": st.session_state.get("income_level_slider", "Middle") if st.session_state.get("use_income_level_tab2") else None,
+        "region": ", ".join(st.session_state.get("region_multiselect", [])) if st.session_state.get("use_region_tab2") else None,
+        "urban_rural": ", ".join(st.session_state.get("urban_rural_multiselect", [])) if st.session_state.get("use_urban_rural_tab2") else None,
+        "specific_instructions": st.session_state.get("specific_instructions_input", ""),
+        "brand": st.session_state.get("selected_brand", ""),
+        "tone_style": st.session_state.get("tone_style_tab1", ""),
+        "search_results": None,  # Placeholder for search results
+        "template_type": st.session_state.get("template_type", "Custom Campaign"),
+        "output_format": st.session_state.get("output_format_select", "Text")
+    }
 
-        # Gather input variables here, similar to how it was done in the original "Generate Content" section.
-        input_vars = {
-            "campaign_name": campaign_name,
-            "promotion_link": promotion_link,
-            "previous_campaign_reference": previous_campaign_reference,
-            "sku": sku,
-            "product_category": product_category,
-            "campaign_date_range": campaign_date_range,
-            "age_range": f"{age_range[0]}-{age_range[1]}" if age_range else None,
-            "gender": ", ".join(gender) if gender else None,
-            "income_level": income_level if income_level else None,
-            "region": ", ".join(region) if region else None,
-            "urban_rural": ", ".join(urban_rural) if urban_rural else None,
-            "specific_instructions": specific_instructions,
-            "brand": selected_brand,
-            "tone_style": tone_style,
-            "search_results": None,
-            "template_type": template_type,
-            "output_format": output_format
-        }
-
-        # Validate inputs (before chat loop starts, crucial for first-time generation)
+     # Move validation logic here, outside of any tab
+    if st.session_state.current_tab == 0:  # Only validate on tab 0
         is_valid, error_message = validate_inputs(input_vars)
         if not is_valid:
             st.error(error_message)
-            st.stop()  # Stop execution if validation fails
+            # Prevent moving to the next tab by not calling next_tab()
+            st.stop()  # Stop execution so the rest of the code doesn't run
 
-        # Validate date range
-        if not validate_date_range(campaign_date_range):
+        if not validate_date_range(st.session_state.get("campaign_date_range", "")):
             st.error("Invalid date range. End date must be after start date.")
+            # Prevent moving to the next tab
             st.stop()
 
 
-        # Create a container for chat messages with fixed height and scrolling
-        chat_container = st.container()
-        # Apply custom styling for chat container
-        st.markdown("""
-            <style>
-            [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-                height: 600px;
-                overflow-y: auto;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-        
-        with chat_container:
+    # Generate content button (can be outside the tabs)
+    if st.button("🎨 Generate Content", type="primary"):
+        with st.spinner("🎨 Generating your marketing content..."):
+            generation_result = generate_content_workflow(
+                input_vars,
+                st.session_state.get('model_name_select', 'gpt-4'), # Default to gpt-4
+                st.session_state.get('temperature_slider', 0.7),
+                st.session_state.get('top_p_slider', 0.9),
+                st.session_state.get('output_format_select', 'Text'),
+                st.session_state.get('use_rag', True),
+                None,  # No RAG query on initial generation
+                st.session_state.get('use_search_engine', False),
+                st.session_state.get('search_query_input', None),
+                st.session_state.get('selected_brand'), openai_api_key, google_api_key
+            )
+            if "error" in generation_result:
+                st.error(f"Failed to generate content: {generation_result['error']}")
+            else:
+                st.session_state.generated_content_result = generation_result["content"]
+                display_generated_content(
+                    st.session_state.generated_content_result,
+                    st.session_state.get('selected_brand', 'Default Brand'),  # Provide defaults
+                    st.session_state.get('generate_image', False),
+                    st.session_state.get('image_style_select', 'Realistic'),
+                    openai_api_key,
+                    st.session_state.get('campaign_name', 'Unnamed Campaign')
+                )
+
+
+    # Chat interface and other elements (place these outside the tab containers)
+    if st.session_state.generated_content_result:
+        st.subheader("💬 Refine Your Content")
+        with st.container():
+            st.markdown('<div class="chat-container">', unsafe_allow_html=True)
             # Add Clear All button
             if st.button("🗑️ Clear All Messages", key="clear_all"):
                 clear_chat_history()
+                st.rerun()
 
-            # Display chat messages from history with delete buttons
+            # Display chat messages with delete buttons
             for idx, message in enumerate(st.session_state.messages):
                 col1, col2 = st.columns([0.9, 0.1])
                 with col1:
@@ -519,66 +603,32 @@ def main():
                 with col2:
                     if st.button("🗑️", key=f"delete_{idx}"):
                         delete_message(idx)
-                        st.rerun()  # Important: Rerun to update the chat display
+                        st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Input field fixed at bottom
-        st.markdown("<div style='padding: 1rem 0;'></div>", unsafe_allow_html=True)
-        if user_input := st.chat_input("Ask a question about your campaign, or type 'generate' to create content..."):
-            handle_chat_input(user_input, model_name, temperature, openai_api_key, google_api_key, input_vars)
+            # Fixed position chat input
+            if user_input := st.chat_input("Ask questions or provide instructions to refine the content..."):
+                handle_chat_input(user_input, st.session_state.get("model_name_select", "gpt-4"),
+                                st.session_state.get("temperature_slider", 0.7),
+                                openai_api_key, google_api_key, input_vars)
 
 
-    if st.session_state.generated_content_result:
-        col1, col2 = st.columns([1, 3]) # Adjust column widths as needed
+        # Content actions - Removed satisfaction and regeneration buttons
+        # Save content options
+        st.subheader("Save Options")
+        col1, col2 = st.columns(2)
         with col1:
-            if st.button("👍 Satisfied"):
-                st.session_state.content_satisfied = True
-                st.success("Content marked as satisfactory!")  # Keep this
-
+            save_format = st.selectbox("Save Format", ["txt", "json"], key="save_format_selectbox")
         with col2:
-            if not st.session_state.content_satisfied and st.button("🔄 Regenerate", type="secondary"):
-                 st.session_state.messages.append({"role": "assistant", "content": "Regenerating content..."})  # Add to chat
-                 # Directly regenerate.  No need for another button.
-                 generation_result = generate_content_workflow(
-                    input_vars, model_name, temperature, st.session_state.get('top_p', 0.9),
-                    st.session_state.get('output_format', 'Text'),
-                    st.session_state.get('use_rag', False),
-                    None,  # No specific RAG query on regenerate
-                    st.session_state.get('use_search_engine', False),
-                    st.session_state.get('search_engine_query', None),
-                    st.session_state.get('selected_brand'), openai_api_key, google_api_key
+            if st.button("💾 Save Content", key="save_content_button"):
+                saved_file = save_content_to_file(
+                    st.session_state.generated_content_result, st.session_state.get('campaign_name', 'Unnamed_Campaign'), save_format
                 )
-                 if "error" in generation_result:
-                     st.error(f"Regeneration failed: {generation_result['error']}")
-                     st.session_state.messages.append({"role": "assistant", "content": f"Regeneration failed: {generation_result['error']}"})
-                 else:
-                     st.session_state.generated_content_result = generation_result["content"]
-                     display_generated_content(
-                         st.session_state.generated_content_result,
-                         st.session_state.get('selected_brand', 'Default Brand'),
-                         st.session_state.get('generate_image', False),
-                         st.session_state.get('image_style', 'Realistic'),
-                         openai_api_key,
-                         st.session_state.get('campaign_name', 'Unnamed Campaign')
-                     )
-                    #  st.success("Content regenerated.") #removed success message
-
-        if st.session_state.content_satisfied:
-            # Save content options only when satisfied
-            st.subheader("Save Options")
-            col1, col2 = st.columns(2)
-            with col1:
-                save_format = st.selectbox("Save Format", ["txt", "json"], key="save_format_selectbox") # Add key
-            with col2:
-                if st.button("💾 Save Content", key="save_content_button"): # Add key
-                    saved_file = save_content_to_file(
-                        st.session_state.generated_content_result, campaign_name, save_format
+                if saved_file:
+                    st.success(f"Content saved to: {saved_file}")
+                    st.session_state.campaign_history.append(
+                        f"{st.session_state.get('campaign_name', 'Unnamed_Campaign')} ({datetime.now().strftime('%Y-%m-%d')})"
                     )
-                    if saved_file:
-                        st.success(f"Content saved to: {saved_file}")
-                        st.session_state.campaign_history.append(
-                            f"{campaign_name} ({datetime.now().strftime('%Y-%m-%d')})"
-                        )
-
 
 
 if __name__ == "__main__":
